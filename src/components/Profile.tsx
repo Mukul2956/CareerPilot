@@ -61,7 +61,7 @@ export function Profile() {
     { label: 'Study Hours', value: 0, target: 0 },
   ]);
 
-  // Delete account handler
+  // Delete account handler (calls Supabase Edge Function)
   const handleDeleteAccount = async () => {
     if (!window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) return;
     setLoading(true);
@@ -72,12 +72,40 @@ export function Profile() {
         setLoading(false);
         return;
       }
-      await supabase.from('profiles').delete().eq('id', user.id);
-      // @ts-ignore
-      await supabase.auth.admin.deleteUser(user.id);
-      toast.success('Account deleted.');
-      await supabase.auth.signOut();
-      window.location.replace('/');
+      // Get the current session to retrieve the access token
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        toast.error('Could not get access token. Please log in again.');
+        setLoading(false);
+        return;
+      }
+      // Log the payload before sending
+      console.log('Deleting user:', user.id);
+      // Call the Edge Function to delete all user data and auth
+      const response = await fetch('https://bmhvwzqadllsyncnyhyw.functions.supabase.co/delete_user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ user_id: user.id }),
+      });
+      let result: { error?: string } = {};
+      try {
+        // Only try to parse JSON if there is content
+        const text = await response.text();
+        result = text ? JSON.parse(text) : {};
+      } catch (e) {
+        result = {};
+      }
+      if (response.ok) {
+        toast.success('Account deleted.');
+        await supabase.auth.signOut();
+        window.location.href = '/';
+      } else {
+        toast.error('Error deleting account: ' + (result && result.error ? result.error : 'Unknown error'));
+      }
     } catch (err: any) {
       toast.error('Unexpected error: ' + (err.message || err));
     } finally {
