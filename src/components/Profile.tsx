@@ -8,7 +8,7 @@ import { Badge } from './ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
 import { Separator } from './ui/separator';
 import { Switch } from './ui/switch';
-import { supabase } from '../utils/supabase/client';
+import { apiGet, apiPost, apiPut } from '../api';
 import { toast } from 'sonner';
 import {
   User,
@@ -61,51 +61,19 @@ export function Profile() {
     { label: 'Study Hours', value: 0, target: 0 },
   ]);
 
-  // Delete account handler (calls Supabase Edge Function)
+  // Delete account handler (calls backend API)
   const handleDeleteAccount = async () => {
     if (!window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) return;
     setLoading(true);
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        toast.error('Could not get user. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      // Get the current session to retrieve the access token
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
-      if (!accessToken) {
-        toast.error('Could not get access token. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      // Log the payload before sending
-      console.log('Deleting user:', user.id);
-      // Call the Edge Function to delete all user data and auth
-      const response = await fetch('https://bmhvwzqadllsyncnyhyw.functions.supabase.co/delete_user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ user_id: user.id }),
-      });
-      let result: { error?: string } = {};
-      try {
-        // Only try to parse JSON if there is content
-        const text = await response.text();
-        result = text ? JSON.parse(text) : {};
-      } catch (e) {
-        result = {};
-      }
-      if (response.ok) {
-        toast.success('Account deleted.');
-        await supabase.auth.signOut();
-        window.location.href = '/';
-      } else {
-        toast.error('Error deleting account: ' + (result && result.error ? result.error : 'Unknown error'));
-      }
+      // Get JWT from Supabase session
+      const { data: { session } } = await import('../utils/supabase/client').then(m => m.supabase.auth.getSession());
+      const token = session?.access_token;
+      await apiPost('/auth/delete-account', {}, token);
+      toast.success('Account deleted.');
+      // Optionally clear localStorage and redirect
+      localStorage.clear();
+      window.location.href = '/';
     } catch (err: any) {
       toast.error('Unexpected error: ' + (err.message || err));
     } finally {
@@ -116,17 +84,14 @@ export function Profile() {
   useEffect(() => {
     const fetchProfile = async () => {
       setLoading(true);
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        toast.error('Could not get user. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (!error && data) {
+      try {
+        const { data: { session } } = await import('../utils/supabase/client').then(m => m.supabase.auth.getSession());
+        const token = session?.access_token;
+        console.log('Supabase JWT:', token); // Debug log
+        const data = await apiGet('/profiles/me', token);
         setProfile({
           name: data.name || '',
-          email: user.email || '',
+          email: data.email || '',
           location: data.location || '',
           title: data.title || '',
           bio: data.bio || '',
@@ -134,8 +99,8 @@ export function Profile() {
           career_goal: data.career_goal || '',
           experience: data.experience || '',
         });
-      } else {
-        setProfile(p => ({ ...p, email: user.email || '' }));
+      } catch (err: any) {
+        toast.error('Could not fetch profile: ' + (err.message || err));
       }
       setLoading(false);
     };
@@ -144,48 +109,46 @@ export function Profile() {
 
   useEffect(() => {
     const fetchAchievements = async () => {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) return setAchievements([]);
-      const { data, error } = await supabase
-        .from('User Achievements')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false });
-      setAchievements(!error && data ? data : []);
+      try {
+        const { data: { session } } = await import('../utils/supabase/client').then(m => m.supabase.auth.getSession());
+        const token = session?.access_token;
+        const data = await apiGet('/profiles/me/achievements', token);
+        setAchievements(data || []);
+      } catch {
+        setAchievements([]);
+      }
     };
     fetchAchievements();
   }, []);
 
   useEffect(() => {
     const fetchActivities = async () => {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) return setRecentActivities([]);
-      const { data, error } = await supabase
-        .from('User Activity Log')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      setRecentActivities(!error && data ? data : []);
+      try {
+        const { data: { session } } = await import('../utils/supabase/client').then(m => m.supabase.auth.getSession());
+        const token = session?.access_token;
+        const data = await apiGet('/profiles/me/activities', token);
+        setRecentActivities(data || []);
+      } catch {
+        setRecentActivities([]);
+      }
     };
     fetchActivities();
   }, []);
 
   useEffect(() => {
     const fetchStats = async () => {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) return;
-      const { data, error } = await supabase
-        .from('User Skills Table')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-      if (!error && data) {
+      try {
+        const { data: { session } } = await import('../utils/supabase/client').then(m => m.supabase.auth.getSession());
+        const token = session?.access_token;
+        const data = await apiGet('/profiles/me/stats', token);
         setLearningStats([
           { label: 'Courses Completed', value: data.courses_completed || 0, target: data.courses_target || 0 },
           { label: 'Skills Mastered', value: data.skills_mastered || 0, target: data.skills_target || 0 },
           { label: 'Certificates Earned', value: data.certificates_earned || 0, target: data.certificates_target || 0 },
           { label: 'Study Hours', value: data.study_hours || 0, target: data.study_hours_target || 0 },
         ]);
+      } catch {
+        // ignore
       }
     };
     fetchStats();
@@ -198,31 +161,13 @@ export function Profile() {
   const handleSave = async () => {
     setLoading(true);
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        toast.error('Could not get user. Please log in again.');
-        setLoading(false);
-        return;
-      }
-      const { error } = await supabase.from('profiles').upsert({
-        id: user.id,
-        name: profile.name,
-        location: profile.location,
-        title: profile.title,
-        bio: profile.bio,
-        website: profile.website,
-        career_goal: profile.career_goal,
-        experience: profile.experience,
-        updated_at: new Date().toISOString(),
-      });
-      if (error) {
-        toast.error('Failed to save profile: ' + error.message);
-      } else {
-        toast.success('Profile updated!');
-        setIsEditing(false);
-      }
+      const { data: { session } } = await import('../utils/supabase/client').then(m => m.supabase.auth.getSession());
+      const token = session?.access_token;
+      await apiPut('/profiles/me', profile, token);
+      toast.success('Profile updated!');
+      setIsEditing(false);
     } catch (err: any) {
-      toast.error('Unexpected error: ' + err.message);
+      toast.error('Failed to save profile: ' + (err.message || err));
     } finally {
       setLoading(false);
     }

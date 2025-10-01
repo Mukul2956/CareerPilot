@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { apiPost } from '../api';
+import { supabase } from '../utils/supabase/client';
 import { motion } from 'motion/react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -43,6 +45,10 @@ export function Analysis() {
     resume: null
   });
   const [showResults, setShowResults] = useState(false);
+  const [careerMatches, setCareerMatches] = useState<any[]>([]);
+  const [skillGaps, setSkillGaps] = useState<any[]>([]);
+  const [learningPath, setLearningPath] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const experienceLevels = [
     'Entry Level (0-2 years)',
@@ -61,71 +67,49 @@ export function Analysis() {
     'Other'
   ];
 
-  const handleAnalyze = () => {
-    setShowResults(true);
-    setCurrentStep(4);
+  const handleAnalyze = async () => {
+    setLoading(true);
+    try {
+      // Try to get the current session token from Supabase (optional for public endpoints)
+      let token;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token;
+      } catch (error) {
+        console.log('No authentication session found, proceeding with public access');
+        token = undefined;
+      }
+      
+      const payload = {
+        target_role: analysisData.jobTitle,
+        n_recommendations: 5,
+        include_explanations: true
+      };
+      // Fetch recommendations from backend
+      const recRes = await apiPost('/recommendations/career', payload, token || undefined);
+      setCareerMatches(recRes.career_recommendations || []);
+      setSkillGaps(recRes.skill_gaps || []);
+      // Fetch learning path recommendations
+      const learningPayload = {
+        target_role: analysisData.jobTitle,
+        n_recommendations: 5,
+        include_explanations: true
+      };
+      const learnRes = await apiPost('/recommendations/learning-paths', learningPayload, token || undefined);
+      setLearningPath(learnRes.learning_paths || []);
+      setShowResults(true);
+      setCurrentStep(4);
+    } catch (err: any) {
+      alert('Failed to fetch recommendations: ' + (err.message || err));
+    }
+    setLoading(false);
   };
 
-  const careerMatches = [
-    {
-      title: 'Frontend Developer',
-      match: 92,
-      salary: '$85,000 - $120,000',
-      growth: '+15%',
-      description: 'Perfect match for your React and JavaScript skills',
-      skills: ['React', 'JavaScript', 'CSS', 'HTML'],
-      inDemand: true
-    },
-    {
-      title: 'Full Stack Developer',
-      match: 78,
-      salary: '$90,000 - $140,000',
-      growth: '+12%',
-      description: 'Great opportunity to expand backend skills',
-      skills: ['Node.js', 'Python', 'Database', 'API'],
-      inDemand: true
-    },
-    {
-      title: 'UI/UX Designer',
-      match: 65,
-      salary: '$70,000 - $110,000',
-      growth: '+8%',
-      description: 'Leverage your frontend skills in design',
-      skills: ['Figma', 'Design Systems', 'User Research'],
-      inDemand: false
-    }
-  ];
+    // Removed duplicate 'careerMatches' array declaration. Use state variable only.
 
-  const skillGaps = [
-    { skill: 'TypeScript', importance: 'High', currentLevel: 30, targetLevel: 80 },
-    { skill: 'Node.js', importance: 'High', currentLevel: 20, targetLevel: 70 },
-    { skill: 'Testing', importance: 'Medium', currentLevel: 40, targetLevel: 75 },
-    { skill: 'DevOps', importance: 'Medium', currentLevel: 15, targetLevel: 60 },
-  ];
+  // Removed duplicate 'skillGaps' array declaration. Use state variable only.
 
-  const learningPath = [
-    {
-      title: 'Complete TypeScript Fundamentals',
-      description: 'Master TypeScript to improve code quality and developer experience',
-      duration: '2 weeks',
-      priority: 'High',
-      type: 'Course'
-    },
-    {
-      title: 'Build a Full Stack Project',
-      description: 'Apply your skills in a real-world project with backend integration',
-      duration: '4 weeks',
-      priority: 'High',
-      type: 'Project'
-    },
-    {
-      title: 'Learn Testing Best Practices',
-      description: 'Master unit and integration testing for React applications',
-      duration: '1 week',
-      priority: 'Medium',
-      type: 'Course'
-    }
-  ];
+  // Removed duplicate 'learningPath' array declaration. Use state variable only.
 
   return (
     <div className="pt-16 min-h-screen bg-gray-50">
@@ -370,42 +354,40 @@ export function Analysis() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
-                    {careerMatches.map((match, index) => (
+                    {careerMatches.map((match: any, index: number) => (
                       <div key={index} className={`p-6 rounded-lg border-2 ${
                         index === 0 ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'
                       }`}>
                         <div className="flex justify-between items-start mb-4">
                           <div>
                             <div className="flex items-center space-x-2 mb-2">
-                              <h3 className="text-lg font-semibold">{match.title}</h3>
+                              <h3 className="text-lg font-semibold">{match.job_title || match.title}</h3>
                               {match.inDemand && <Badge variant="secondary">High Demand</Badge>}
                               {index === 0 && <Badge className="bg-green-600">Best Match</Badge>}
                             </div>
-                            <p className="text-gray-600 mb-2">{match.description}</p>
+                            <p className="text-gray-600 mb-2">{match.reasoning || match.description}</p>
                           </div>
                           <div className="text-right">
-                            <div className="text-2xl font-bold text-green-600">{match.match}%</div>
+                            <div className="text-2xl font-bold text-green-600">{match.match_score ? Math.round(match.match_score * 100) : match.match || 0}%</div>
                             <div className="text-sm text-gray-500">Match</div>
                           </div>
                         </div>
-                        
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                           <div className="flex items-center space-x-2">
                             <DollarSign className="w-4 h-4 text-gray-600" />
-                            <span className="text-sm">{match.salary}</span>
+                            <span className="text-sm">{(match.salary_range && (Array.isArray(match.salary_range) ? `${match.salary_range[0]} - ${match.salary_range[1]}` : match.salary_range)) || match.salary}</span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <TrendingUp className="w-4 h-4 text-green-600" />
-                            <span className="text-sm">Growth: {match.growth}</span>
+                            <span className="text-sm">Growth: {match.growth_potential || match.growth}</span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <Users className="w-4 h-4 text-blue-600" />
-                            <span className="text-sm">Market Demand</span>
+                            <span className="text-sm">{match.market_demand || 'Market Demand'}</span>
                           </div>
                         </div>
-                        
                         <div className="flex flex-wrap gap-2">
-                          {match.skills.map((skill, skillIndex) => (
+                          {match.required_skills && match.required_skills.map((skill: string, skillIndex: number) => (
                             <Badge key={skillIndex} variant="outline">{skill}</Badge>
                           ))}
                         </div>
@@ -431,26 +413,26 @@ export function Analysis() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {skillGaps.map((gap, index) => (
+                    {skillGaps.map((gap: any, index: number) => (
                       <div key={index} className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className="font-medium">{gap.skill}</span>
+                          <span className="font-medium">{gap.skill || gap.name}</span>
                           <Badge variant={gap.importance === 'High' ? 'destructive' : 'secondary'}>
-                            {gap.importance}
+                            {gap.importance || 'Medium'}
                           </Badge>
                         </div>
                         <div className="space-y-1">
                           <div className="flex justify-between text-sm text-gray-600">
-                            <span>Current: {gap.currentLevel}%</span>
-                            <span>Target: {gap.targetLevel}%</span>
+                            <span>Current: {gap.currentLevel || gap.current_level || 0}%</span>
+                            <span>Target: {gap.targetLevel || gap.target_level || 100}%</span>
                           </div>
                           <div className="relative">
-                            <Progress value={gap.currentLevel} className="h-2" />
+                            <Progress value={gap.currentLevel || gap.current_level || 0} className="h-2" />
                             <div 
                               className="absolute top-0 h-2 bg-green-200 rounded-full"
                               style={{ 
-                                left: `${gap.currentLevel}%`, 
-                                width: `${gap.targetLevel - gap.currentLevel}%` 
+                                left: `${gap.currentLevel || gap.current_level || 0}%`, 
+                                width: `${(gap.targetLevel || gap.target_level || 100) - (gap.currentLevel || gap.current_level || 0)}%` 
                               }}
                             />
                           </div>
@@ -475,24 +457,24 @@ export function Analysis() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {learningPath.map((item, index) => (
+                    {learningPath.map((item: any, index: number) => (
                       <div key={index} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-medium">{item.title}</h4>
                           <Badge variant={item.priority === 'High' ? 'destructive' : 'secondary'}>
-                            {item.priority}
+                            {item.priority || item.difficulty_level || 'Medium'}
                           </Badge>
                         </div>
-                        <p className="text-sm text-gray-600 mb-3">{item.description}</p>
+                        <p className="text-sm text-gray-600 mb-3">{item.description || item.reasoning}</p>
                         <div className="flex justify-between items-center">
                           <div className="flex items-center space-x-4 text-sm text-gray-500">
                             <div className="flex items-center space-x-1">
                               <Clock className="w-3 h-3" />
-                              <span>{item.duration}</span>
+                              <span>{item.duration || (item.estimated_duration_weeks ? item.estimated_duration_weeks + ' weeks' : '')}</span>
                             </div>
                             <div className="flex items-center space-x-1">
                               <FileText className="w-3 h-3" />
-                              <span>{item.type}</span>
+                              <span>{item.type || 'Course'}</span>
                             </div>
                           </div>
                           <Button size="sm">Start Learning</Button>

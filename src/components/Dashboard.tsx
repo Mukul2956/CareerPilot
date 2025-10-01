@@ -30,6 +30,7 @@ import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
 import { supabase } from '../utils/supabase/client';
+import { apiGet } from '../api';
 import { 
   LineChart, 
   Line, 
@@ -76,14 +77,11 @@ export function Dashboard() {
     const fetchAchievements = async () => {
       if (!user) return;
       setLoadingAchievements(true);
-      const { data, error } = await supabase
-        .from('achievements')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false });
-      if (!error && data) {
-        setAchievements(data);
-      } else {
+      try {
+        const token = (await supabase.auth.getSession()).data.session?.access_token;
+        const data = await apiGet('/profiles/me/achievements', token);
+        setAchievements(data || []);
+      } catch {
         setAchievements([]);
       }
       setLoadingAchievements(false);
@@ -101,13 +99,11 @@ export function Dashboard() {
     const fetchSkills = async () => {
       if (!user) return;
       setLoadingSkills(true);
-      const { data, error } = await supabase
-        .from('skills')
-        .select('*')
-        .eq('user_id', user.id);
-      if (!error && data) {
-        setSkillData(data);
-      } else {
+      try {
+        const token = (await supabase.auth.getSession()).data.session?.access_token;
+        const data = await apiGet('/profiles/me/skills', token);
+        setSkillData(data || []);
+      } catch {
         setSkillData([]);
       }
       setLoadingSkills(false);
@@ -120,50 +116,31 @@ export function Dashboard() {
     { name: 'Data Scientist', value: 20, color: '#f59e0b' },
     { name: 'DevOps Engineer', value: 10, color: '#ef4444' },
   ]);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([
-    {
-      title: 'Complete React Advanced Course',
-      description: 'Master advanced React patterns and state management',
-      priority: 'High',
-      timeEstimate: '2 weeks',
-      icon: BookOpen
-    },
-    {
-      title: 'Learn TypeScript Fundamentals',
-      description: 'Add type safety to your JavaScript development',
-      priority: 'Medium',
-      timeEstimate: '1 week',
-      icon: Target
-    },
-    {
-      title: 'Build a Full Stack Project',
-      description: 'Apply your skills in a real-world project',
-      priority: 'High',
-      timeEstimate: '4 weeks',
-      icon: Award
-    }
-  ]);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      if (!user) return;
+      try {
+        const token = (await supabase.auth.getSession()).data.session?.access_token;
+        const data = await apiGet('/recommendations/learning-paths', token);
+        setRecommendations(data?.learning_paths || []);
+      } catch {
+        setRecommendations([]);
+      }
+    };
+    fetchRecommendations();
+  }, [user]);
   const [loadingActivities, setLoadingActivities] = useState(true);
 
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user) return;
       setLoadingActivities(true);
-      // Fetch activities for this user from Supabase
-      const { data: activities, error } = await supabase
-        .from('activities')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      if (!error && activities) {
-        setRecentActivities(activities.map((a: any) => ({
-          action: a.action,
-          item: a.item,
-          time: a.time || a.created_at,
-          score: a.score || null
-        })));
-        // Optionally, set activityData, skillData, etc. from activities if your schema supports it
-      } else {
+      try {
+        const token = (await supabase.auth.getSession()).data.session?.access_token;
+        const data = await apiGet('/profiles/me/activities', token);
+        setRecentActivities(data || []);
+      } catch {
         setRecentActivities([]);
       }
       setLoadingActivities(false);

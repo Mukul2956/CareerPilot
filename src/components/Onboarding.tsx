@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabase/client';
+import { apiPost } from '../api';
 import { motion } from 'motion/react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -24,30 +25,25 @@ export function Onboarding() {
     e.preventDefault();
     setLoading(true);
     try {
-      // Get current user
+      // Get current user from Supabase (for ID/email)
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         toast.error('Could not get user. Please log in again.');
         setLoading(false);
         return;
       }
-      // Upsert profile info
-      const { error } = await supabase.from('profiles').upsert({
-        id: user.id,
+      // Send profile data to backend API
+      await apiPost(`/profile`, {
+        user_id: user.id,
         name: form.name,
         career_goal: form.careerGoal,
         experience: form.experience,
-        updated_at: new Date().toISOString(),
+        email: user.email,
       });
-      if (error) {
-        toast.error('Failed to save profile: ' + error.message);
-        setLoading(false);
-        return;
-      }
       toast.success('Profile created!');
       navigate('/dashboard');
     } catch (err: any) {
-      toast.error('Unexpected error: ' + err.message);
+      toast.error('Unexpected error: ' + (err.message || err));
     } finally {
       setLoading(false);
     }

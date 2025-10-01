@@ -58,5 +58,10 @@
     server: {
       port: 3000,
       open: true,
+      hmr: {
+        port: 3001, // Use different port for HMR to avoid conflicts
+        // Uncomment the next line to disable HMR if errors persist
+        // overlay: false
+      },
     },
   });
